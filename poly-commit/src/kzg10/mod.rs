@@ -230,6 +230,61 @@ where
         Ok((CommitmentG1(commitment.into()), randomness))
     }
 
+    /// Same as commit_g1, but for G2 commitments.
+    pub fn commit_g2(
+        powers: &Powers<E>,
+        polynomial: &P,
+        hiding_bound: Option<usize>,
+        rng: Option<&mut dyn RngCore>,
+    ) -> Result<(CommitmentG2<E>, Randomness<E::ScalarField, P>), Error> {
+        Self::check_degree_is_too_large(polynomial.degree(), powers.size())?;
+
+        let commit_time = start_timer!(|| format!(
+            "Committing to polynomial of degree {} with hiding_bound: {:?}",
+            polynomial.degree(),
+            hiding_bound,
+        ));
+
+        let (num_leading_zeros, plain_coeffs) =
+            skip_leading_zeros_and_convert_to_bigints(polynomial);
+
+        let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
+        let mut commitment = <E::G2 as VariableBaseMSM>::msm_bigint(
+            &powers.powers_of_h[num_leading_zeros..],
+            plain_coeffs.as_slice(),
+        );
+        end_timer!(msm_time);
+
+        let mut randomness = Randomness::<E::ScalarField, P>::empty();
+        if let Some(hiding_degree) = hiding_bound {
+            let mut rng = rng.ok_or(Error::MissingRng)?;
+            let sample_random_poly_time = start_timer!(|| format!(
+                "Sampling a random polynomial of degree {}",
+                hiding_degree
+            ));
+
+            randomness = Randomness::rand(hiding_degree, false, None, &mut rng);
+            Self::check_hiding_bound(
+                randomness.blinding_polynomial.degree(),
+                powers.powers_of_gamma_h.len(),
+            )?;
+            end_timer!(sample_random_poly_time);
+        }
+
+        let random_ints = convert_to_bigints(&randomness.blinding_polynomial.coeffs());
+        let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
+        let random_commitment = <E::G2 as VariableBaseMSM>::msm_bigint(
+            &powers.powers_of_gamma_h,
+            random_ints.as_slice(),
+        )
+        .into_affine();
+        end_timer!(msm_time);
+
+        commitment += &random_commitment;
+
+        end_timer!(commit_time);
+        Ok((CommitmentG2(commitment.into()), randomness))
+    }
 
     /// Compute witness polynomial.
     ///

@@ -1,13 +1,15 @@
 [package]
 name = "ark-pcs-bench-templates"
-version.workspace = true
-authors.workspace = true
-repository.workspace = true
-categories.workspace = true
-include.workspace = true
-license.workspace = true
-edition.workspace = true
-publish = false
+version = "0.5.0"
+authors = ["arkworks contributors"]
+description = "A library for constructing polynomial commitment schemes for use in zkSNARKs"
+repository = "https://github.com/arkworks-rs/poly-commit"
+documentation = "https://docs.rs/ark-poly-commit/"
+keywords = ["cryptography", "commitments", "elliptic-curves", "pairing"]
+include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
+categories = ["cryptography"]
+license = "MIT/Apache-2.0"
+edition = "2021"
 
 [dependencies]
 ark-poly-commit = { path = "../poly-commit", default-features = false }

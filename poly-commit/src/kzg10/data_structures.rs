@@ -1,5 +1,5 @@
 use crate::*;
-use ark_ec::{pairing::Pairing, AdditiveGroup, AffineRepr};
+use ark_ec::{pairing::Pairing, AdditiveGroup, AffineRepr, CurveGroup};
 use ark_ff::ToConstraintField;
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Valid, Validate,
@@ -149,6 +149,17 @@ pub struct Powers<'a, E: Pairing> {
     pub powers_of_gamma_h: Cow<'a, [E::G2Affine]>,
 }
 
+impl<E: Pairing> UniversalParams<E> {
+    pub fn powers(&self) -> Powers<'_, E> {
+        Powers {
+            powers_of_g: Cow::Borrowed(&self.powers_of_g),
+            powers_of_gamma_g: Cow::Owned(self.powers_of_gamma_g.values().cloned().collect()),
+            powers_of_h: Cow::Borrowed(&self.powers_of_h),
+            powers_of_gamma_h: Cow::Owned(self.powers_of_gamma_h.values().cloned().collect()),
+        }
+    }
+}
+
 impl<E: Pairing> Powers<'_, E> {
     /// The number of powers in `self`.
     pub fn size(&self) -> usize {
@@ -232,6 +243,20 @@ pub struct VerifierKey<E: Pairing> {
     /// \beta times the above generator of G2, prepared for use in pairings.
     #[derivative(Debug = "ignore", PartialEq = "ignore")]
     pub prepared_beta_h: E::G2Prepared,
+}
+
+impl<E: Pairing> UniversalParams<E> {
+    pub fn vk(&self) -> VerifierKey<E> {
+        VerifierKey {
+            g: self.powers_of_g[0],
+            gamma_g: self.powers_of_gamma_g[&0],
+            h: self.h,
+            gamma_h: self.powers_of_gamma_h[&0],
+            beta_h: self.beta_h,
+            prepared_h: self.prepared_h.clone(),
+            prepared_beta_h: self.prepared_beta_h.clone(),
+        }
+    }
 }
 
 impl<E: Pairing> Valid for VerifierKey<E> {
@@ -369,6 +394,23 @@ macro_rules! commitment_impl {
             pub $group_type,
         );
 
+        impl<E: Pairing> $commitment_type<E> {
+            pub fn map(&self, f: impl Fn($group_type) -> $group_type) -> Self {
+                $commitment_type(f(self.0))
+            }
+
+            pub fn combine<'a, I: IntoIterator<Item = &'a $commitment_type<E>>>(
+                comms: I,
+                r: E::ScalarField,
+            ) -> Self {
+                let mut comm = <$group_type as AffineRepr>::Group::ZERO;
+                for (i, c) in comms.into_iter().enumerate() {
+                    comm += c.0 * r.pow([i as u64]);
+                }
+                $commitment_type(comm.into_affine())
+            }
+        }
+
         impl<E: Pairing> PCCommitment for $commitment_type<E> {
             #[inline]
             fn empty() -> Self {
@@ -380,7 +422,8 @@ macro_rules! commitment_impl {
             }
         }
 
-        impl<E: Pairing> ToConstraintField<<E::TargetField as Field>::BasePrimeField> for $commitment_type<E>
+        impl<E: Pairing> ToConstraintField<<E::TargetField as Field>::BasePrimeField>
+            for $commitment_type<E>
         where
             $group_type: ToConstraintField<<E::TargetField as Field>::BasePrimeField>,
         {
@@ -389,7 +432,9 @@ macro_rules! commitment_impl {
             }
         }
 
-        impl<'a, E: Pairing> AddAssign<(E::ScalarField, &'a $commitment_type<E>)> for $commitment_type<E> {
+        impl<'a, E: Pairing> AddAssign<(E::ScalarField, &'a $commitment_type<E>)>
+            for $commitment_type<E>
+        {
             #[inline]
             fn add_assign(&mut self, (f, other): (E::ScalarField, &'a $commitment_type<E>)) {
                 let mut other = other.0 * f;
@@ -547,4 +592,28 @@ pub struct Proof<E: Pairing> {
     /// This is the evaluation of the random polynomial at the point for which
     /// the evaluation proof was produced.
     pub random_v: Option<E::ScalarField>,
+}
+
+impl<E: Pairing> Proof<E> {
+    /// Combine many openings evaluated at the same point into a single proof.
+    pub fn combine<'a, I: IntoIterator<Item = &'a Proof<E>>>(proofs: I, r: E::ScalarField) -> Self {
+        let mut w = E::G1::ZERO;
+        let mut random_v = None;
+        for (i, proof) in proofs.into_iter().enumerate() {
+            w += proof.w * r.pow([i as u64]);
+            match &proof.random_v {
+                Some(v) => {
+                    if random_v.is_none() {
+                        random_v = Some(E::ScalarField::ZERO);
+                    }
+                    random_v = random_v.map(|rv| rv + v);
+                }
+                None => {}
+            }
+        }
+        Proof {
+            w: w.into_affine(),
+            random_v,
+        }
+    }
 }
