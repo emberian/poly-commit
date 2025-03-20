@@ -63,6 +63,7 @@ where
         let g = E::G1::rand(rng);
         let gamma_g = E::G1::rand(rng);
         let h = E::G2::rand(rng);
+        let gamma_h = E::G2::rand(rng);
 
         // powers_of_beta = [1, b, ..., b^(max_degree + 1)], len = max_degree + 2
         let mut powers_of_beta = vec![E::ScalarField::one()];
@@ -76,6 +77,10 @@ where
         let powers_of_g = g.batch_mul(&powers_of_beta[0..max_degree + 1]);
         end_timer!(g_time);
 
+        let h_time = start_timer!(|| "Generating powers of H");
+        let powers_of_h = h.batch_mul(&powers_of_beta[0..max_degree + 1]);
+        end_timer!(h_time);
+
         // Use the entire `powers_of_beta`, since we want to be able to support
         // up to D queries.
         let gamma_g_time = start_timer!(|| "Generating powers of gamma * G");
@@ -85,6 +90,14 @@ where
             .enumerate()
             .collect();
         end_timer!(gamma_g_time);
+
+        let gamma_h_time = start_timer!(|| "Generating powers of gamma * H");
+        let powers_of_gamma_h = gamma_h
+            .batch_mul(&powers_of_beta)
+            .into_iter()
+            .enumerate()
+            .collect();
+        end_timer!(gamma_h_time);
 
         let neg_powers_of_h_time = start_timer!(|| "Generating negative powers of h in G2");
         let neg_powers_of_h = if produce_g2_powers {
@@ -112,7 +125,9 @@ where
 
         let pp = UniversalParams {
             powers_of_g,
+            powers_of_h,
             powers_of_gamma_g,
+            powers_of_gamma_h,
             h,
             beta_h,
             neg_powers_of_h,
@@ -145,16 +160,22 @@ where
     /// let powers_of_gamma_g = (0..=10)
     ///     .map(|i| params.powers_of_gamma_g[&i])
     ///     .collect();
+    /// let powers_of_h = params.powers_of_h[..=10].to_vec();
+    /// let powers_of_gamma_h = (0..=10)
+    ///     .map(|i| params.powers_of_gamma_h[&i])
+    ///     .collect();
     /// let powers = Powers {
     ///     powers_of_g: ark_std::borrow::Cow::Owned(powers_of_g),
     ///     powers_of_gamma_g: ark_std::borrow::Cow::Owned(powers_of_gamma_g),
+    ///     powers_of_h: ark_std::borrow::Cow::Owned(powers_of_h),
+    ///     powers_of_gamma_h: ark_std::borrow::Cow::Owned(powers_of_gamma_h),
     /// };
     /// let secret_poly = UniPoly_381::rand(10, rng);
-    /// let (comm, r) = KZG10::<Bls12_381, UniPoly_381>::commit(&powers, &secret_poly, None, None).expect("Commitment failed");
+    /// let (comm, r) = KZG10::<Bls12_381, UniPoly_381>::commit_g1(&powers, &secret_poly, None, None).expect("Commitment failed");
     /// assert!(!comm.0.is_zero(), "Commitment should not be zero");
     /// assert!(!r.is_hiding(), "Commitment should not be hiding");
     /// ```
-    pub fn commit(
+    pub fn commit_g1(
         powers: &Powers<E>,
         polynomial: &P,
         hiding_bound: Option<usize>,
@@ -174,7 +195,7 @@ where
         let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
         let mut commitment = <E::G1 as VariableBaseMSM>::msm_bigint(
             &powers.powers_of_g[num_leading_zeros..],
-            &plain_coeffs,
+            plain_coeffs.as_slice(),
         );
         end_timer!(msm_time);
 
@@ -206,8 +227,9 @@ where
         commitment += &random_commitment;
 
         end_timer!(commit_time);
-        Ok((Commitment(commitment.into()), randomness))
+        Ok((CommitmentG1(commitment.into()), randomness))
     }
+
 
     /// Compute witness polynomial.
     ///
@@ -254,7 +276,7 @@ where
         let witness_comm_time = start_timer!(|| "Computing commitment to witness polynomial");
         let mut w = <E::G1 as VariableBaseMSM>::msm_bigint(
             &powers.powers_of_g[num_leading_zeros..],
-            &witness_coeffs,
+            witness_coeffs.as_slice(),
         );
         end_timer!(witness_comm_time);
 
@@ -269,7 +291,7 @@ where
                 start_timer!(|| "Computing commitment to random witness polynomial");
             w += &<E::G1 as VariableBaseMSM>::msm_bigint(
                 &powers.powers_of_gamma_g,
-                &random_witness_coeffs,
+                random_witness_coeffs.as_slice(),
             );
             end_timer!(witness_comm_time);
             Some(blinding_evaluation)
@@ -313,7 +335,7 @@ where
     /// committed inside `comm`.
     pub fn check(
         vk: &VerifierKey<E>,
-        comm: &Commitment<E>,
+        comm: &CommitmentG1<E>,
         point: E::ScalarField,
         value: E::ScalarField,
         proof: &Proof<E>,
@@ -336,7 +358,7 @@ where
     /// `commitment_i` at `point_i`.
     pub fn batch_check<R: RngCore>(
         vk: &VerifierKey<E>,
-        commitments: &[Commitment<E>],
+        commitments: &[CommitmentG1<E>],
         points: &[E::ScalarField],
         values: &[E::ScalarField],
         proofs: &[Proof<E>],
@@ -500,14 +522,22 @@ mod tests {
                 .map(|i| pp.powers_of_gamma_g[&i])
                 .collect();
 
+            let powers_of_h = pp.powers_of_h[..=supported_degree].to_vec();
+            let powers_of_gamma_h = (0..=supported_degree)
+                .map(|i| pp.powers_of_gamma_h[&i])
+                .collect();
+
             let powers = Powers {
                 powers_of_g: ark_std::borrow::Cow::Owned(powers_of_g),
                 powers_of_gamma_g: ark_std::borrow::Cow::Owned(powers_of_gamma_g),
+                powers_of_h: ark_std::borrow::Cow::Owned(powers_of_h),
+                powers_of_gamma_h: ark_std::borrow::Cow::Owned(powers_of_gamma_h),
             };
             let vk = VerifierKey {
                 g: pp.powers_of_g[0],
                 gamma_g: pp.powers_of_gamma_g[&0],
                 h: pp.h,
+                gamma_h: pp.powers_of_gamma_h[&0],
                 beta_h: pp.beta_h,
                 prepared_h: pp.prepared_h.clone(),
                 prepared_beta_h: pp.prepared_beta_h.clone(),
@@ -535,8 +565,8 @@ mod tests {
         let (powers, _) = KZG_Bls12_381::trim(&pp, degree).unwrap();
 
         let hiding_bound = None;
-        let (comm, _) = KZG10::commit(&powers, &p, hiding_bound, Some(rng)).unwrap();
-        let (f_comm, _) = KZG10::commit(&powers, &f_p, hiding_bound, Some(rng)).unwrap();
+        let (comm, _) = KZG10::commit_g1(&powers, &p, hiding_bound, Some(rng)).unwrap();
+        let (f_comm, _) = KZG10::commit_g1(&powers, &f_p, hiding_bound, Some(rng)).unwrap();
         let mut f_comm_2 = Commitment::empty();
         f_comm_2 += (f, &comm);
 
@@ -559,7 +589,7 @@ mod tests {
             let (ck, vk) = KZG10::<E, P>::trim(&pp, degree)?;
             let p = P::rand(degree, rng);
             let hiding_bound = Some(1);
-            let (comm, rand) = KZG10::<E, P>::commit(&ck, &p, hiding_bound, Some(rng))?;
+            let (comm, rand) = KZG10::<E, P>::commit_g1(&ck, &p, hiding_bound, Some(rng))?;
             let point = E::ScalarField::rand(rng);
             let value = p.evaluate(&point);
             let proof = KZG10::<E, P>::open(&ck, &p, point, &rand)?;
@@ -587,7 +617,7 @@ mod tests {
             let (ck, vk) = KZG10::<E, P>::trim(&pp, 2)?;
             let p = P::rand(1, rng);
             let hiding_bound = Some(1);
-            let (comm, rand) = KZG10::<E, P>::commit(&ck, &p, hiding_bound, Some(rng))?;
+            let (comm, rand) = KZG10::<E, P>::commit_g1(&ck, &p, hiding_bound, Some(rng))?;
             let point = E::ScalarField::rand(rng);
             let value = p.evaluate(&point);
             let proof = KZG10::<E, P>::open(&ck, &p, point, &rand)?;
@@ -623,7 +653,7 @@ mod tests {
             for _ in 0..10 {
                 let p = P::rand(degree, rng);
                 let hiding_bound = Some(1);
-                let (comm, rand) = KZG10::<E, P>::commit(&ck, &p, hiding_bound, Some(rng))?;
+                let (comm, rand) = KZG10::<E, P>::commit_g1(&ck, &p, hiding_bound, Some(rng))?;
                 let point = E::ScalarField::rand(rng);
                 let value = p.evaluate(&point);
                 let proof = KZG10::<E, P>::open(&ck, &p, point, &rand)?;

@@ -100,6 +100,7 @@ where
             .map(|i| pp.powers_of_gamma_g[&i])
             .collect::<Vec<_>>();
 
+
         end_timer!(ck_time);
 
         // Construct the core KZG10 verifier key.
@@ -107,6 +108,7 @@ where
             g: pp.powers_of_g[0].clone(),
             gamma_g: pp.powers_of_gamma_g[&0],
             h: pp.h.clone(),
+            gamma_h: E::G2Affine::zero(),
             beta_h: pp.beta_h.clone(),
             prepared_h: pp.prepared_h.clone(),
             prepared_beta_h: pp.prepared_beta_h.clone(),
@@ -215,13 +217,13 @@ where
             ));
 
             let (comm, rand) =
-                kzg10::KZG10::commit(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
+                kzg10::KZG10::commit_g1(&ck.powers(), polynomial, hiding_bound, Some(rng))?;
             let (shifted_comm, shifted_rand) = if let Some(degree_bound) = degree_bound {
                 let shifted_powers = ck
                     .shifted_powers(degree_bound)
                     .ok_or(Error::UnsupportedDegreeBound(degree_bound))?;
                 let (shifted_comm, shifted_rand) =
-                    kzg10::KZG10::commit(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
+                    kzg10::KZG10::commit_g1(&shifted_powers, &polynomial, hiding_bound, Some(rng))?;
                 (Some(shifted_comm), Some(shifted_rand))
             } else {
                 (None, None)
@@ -357,7 +359,7 @@ where
                 sponge,
                 Some(vk),
             )?;
-        let combined_comm = kzg10::Commitment(combined_comm.into());
+        let combined_comm = kzg10::CommitmentG1(combined_comm.into());
         let result = kzg10::KZG10::check(&vk.vk, &combined_comm, *point, combined_value, proof)?;
         end_timer!(check_time);
         Ok(result)

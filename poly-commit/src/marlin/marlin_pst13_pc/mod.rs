@@ -359,7 +359,7 @@ where
             end_timer!(to_bigint_time);
 
             let msm_time = start_timer!(|| "MSM to compute commitment to plaintext poly");
-            let mut commitment = <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_g, &plain_ints);
+            let mut commitment = <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_g, plain_ints.as_slice());
             end_timer!(msm_time);
 
             // Sample random polynomial
@@ -395,7 +395,7 @@ where
 
             let msm_time = start_timer!(|| "MSM to compute commitment to random poly");
             let random_commitment =
-                <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_gamma_g, &random_ints)
+                <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_gamma_g, random_ints.as_slice())
                     .into_affine();
             end_timer!(msm_time);
 
@@ -403,7 +403,7 @@ where
             commitment += &random_commitment;
 
             let comm = Self::Commitment {
-                comm: kzg10::Commitment(commitment.into()),
+                comm: kzg10::CommitmentG1(commitment.into()),
                 shifted_comm: None,
             };
 
@@ -464,7 +464,7 @@ where
                 // Convert coefficients to BigInt
                 let witness_ints = Self::convert_to_bigints(&w);
                 // Compute MSM
-                <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_g, &witness_ints)
+                <E::G1 as VariableBaseMSM>::msm_bigint(&powers_of_g, witness_ints.as_slice())
             })
             .collect::<Vec<_>>();
         end_timer!(witness_comm_time);
@@ -496,7 +496,7 @@ where
                     // Compute MSM and add result to witness
                     *witness += &<E::G1 as VariableBaseMSM>::msm_bigint(
                         &powers_of_gamma_g,
-                        &hiding_witness_ints,
+                        hiding_witness_ints.as_slice(),
                     );
                 });
             end_timer!(witness_comm_time);

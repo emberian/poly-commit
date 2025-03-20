@@ -322,7 +322,7 @@ where
                 ck.powers()
             };
 
-            let (comm, rand) = kzg10::KZG10::commit(&powers, polynomial, hiding_bound, Some(rng))?;
+            let (comm, rand) = kzg10::KZG10::commit_g1(&powers, polynomial, hiding_bound, Some(rng))?;
 
             labeled_comms.push(LabeledCommitment::new(
                 label.to_string(),
@@ -564,7 +564,7 @@ where
 
         let comms: Vec<Self::Commitment> = E::G1::normalize_batch(&lc_commitments)
             .into_iter()
-            .map(|c| kzg10::Commitment::<E>(c))
+            .map(|c| kzg10::CommitmentG1::<E>(c))
             .collect();
 
         let lc_commitments = lc_info
@@ -648,7 +648,7 @@ where
 
         let comms: Vec<Self::Commitment> = E::G1::normalize_batch(&lc_commitments)
             .into_iter()
-            .map(|c| kzg10::Commitment(c))
+            .map(|c| kzg10::CommitmentG1(c))
             .collect();
 
         let lc_commitments = lc_info

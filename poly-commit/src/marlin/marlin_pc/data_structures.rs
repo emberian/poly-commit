@@ -49,6 +49,8 @@ impl<E: Pairing> CommitterKey<E> {
         kzg10::Powers {
             powers_of_g: self.powers.as_slice().into(),
             powers_of_gamma_g: self.powers_of_gamma_g.as_slice().into(),
+            powers_of_h: vec![].into(),
+            powers_of_gamma_h: vec![].into(),
         }
     }
 
@@ -77,6 +79,8 @@ impl<E: Pairing> CommitterKey<E> {
             let ck = kzg10::Powers {
                 powers_of_g: (&shifted_powers[powers_range]).into(),
                 powers_of_gamma_g: self.powers_of_gamma_g.as_slice().into(),
+                powers_of_h: vec![].into(),
+                powers_of_gamma_h: vec![].into(),
             };
             ck
         })

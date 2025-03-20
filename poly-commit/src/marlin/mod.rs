@@ -93,12 +93,12 @@ where
             .zip(s_flags)
             .map(|((c, s_c), flag)| {
                 let shifted_comm = if flag {
-                    Some(kzg10::Commitment(s_c))
+                    Some(kzg10::CommitmentG1(s_c))
                 } else {
                     None
                 };
                 marlin_pc::Commitment {
-                    comm: kzg10::Commitment(c),
+                    comm: kzg10::CommitmentG1(c),
                     shifted_comm,
                 }
             })
@@ -212,7 +212,7 @@ where
         let combined_comms_affine = E::G1::normalize_batch(&combined_comms);
         let combined_comms = combined_comms_affine
             .into_iter()
-            .map(|c| kzg10::Commitment(c.into()))
+            .map(|c| kzg10::CommitmentG1(c.into()))
             .collect::<Vec<_>>();
         end_timer!(norm_time);
         Ok((combined_comms, combined_queries, combined_evals))
